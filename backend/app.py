@@ -10,19 +10,19 @@ import datetime
 import requests
 from dotenv import load_dotenv
 import json
+from flask_bcrypt import generate_password_hash, check_password_hash
 
 app = Flask(__name__)
+# CHANGE 1: Added PUT and OPTIONS to allowed methods for profile updates
+CORS(app, resources={r"/*": {"origins": "http://localhost:5173", "methods": ["GET", "POST", "PUT", "OPTIONS"]}})
 
 # --- CONFIGURATION ---
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///cvd_database.db'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
-# Secure key for production
 app.config['JWT_SECRET_KEY'] = 'cvd-secure-jwt-secret-key-2026-v1-stable-production-final-ultra-secure' 
-
 db = SQLAlchemy(app)
 bcrypt = Bcrypt(app)
 jwt = JWTManager(app)
-CORS(app)
 
 # --- DATABASE MODELS ---
 class User(db.Model):
@@ -60,29 +60,24 @@ def register():
     email = data.get('email', '').strip()
     password = data.get('password', '')
 
-    # --- NEW: BLOCK ALL EMPTY FIELDS ---
     if not username or not email or not password:
-        return jsonify({"message": "All fields (Username, Email, Password) are required"}), 400
+        return jsonify({"message": "All fields are required"}), 400
     
-    # Existing Password Strength check
     if len(password) < 6:
         return jsonify({"message": "Password must be at least 6 characters"}), 400
 
-    # Validation: Check if Username OR Email already exists
     if User.query.filter_by(username=username).first():
         return jsonify({"message": "Username already taken"}), 400
     
     if User.query.filter_by(email=email).first():
         return jsonify({"message": "Email already registered"}), 400
 
-    # If all checks pass, proceed to hash and save
     hashed_pw = bcrypt.generate_password_hash(password).decode('utf-8')
     new_user = User(username=username, email=email, password=hashed_pw)
     
     db.session.add(new_user)
     db.session.commit()
     
-    # Return a token immediately after registration so they are logged in
     token = create_access_token(identity=str(new_user.id))
     return jsonify({"token": token, "username": username}), 201
 
@@ -102,19 +97,11 @@ def predict():
     try:
         user_id = get_jwt_identity()
         data = request.json.get('features')
-        
-        # 1. Transform the input data using the loaded scaler
         features_scaled = scaler.transform(np.array([data]))
-        
-        # 2. FIX: Use index [0] instead of [1] because your model's 
-        # internal class for "Disease" is mapped to 0.
         probabilities = model.predict_proba(features_scaled)[0]
         risk_score = round(float(probabilities[0] * 100), 2)
-        
-        # 3. Determine status based on corrected risk score
         status = "High Risk" if risk_score > 50 else "Low Risk"
         
-        # 4. Save to Database
         new_entry = HealthHistory(
             user_id=int(user_id), 
             risk_score=risk_score, 
@@ -126,23 +113,53 @@ def predict():
         
         return jsonify({"status": status, "risk_score": risk_score})
     except Exception as e:
-        print(f"Prediction Error: {e}")
         return jsonify({"error": str(e)}), 500
 
 @app.route('/history', methods=['GET'])
 @jwt_required()
 def get_history():
     user_id = get_jwt_identity()
-    # Fetch all records for the user
     history = HealthHistory.query.filter_by(user_id=int(user_id)).order_by(HealthHistory.id.desc()).all()
-    
-    # IMPORTANT: Add 'features_json' to the dictionary below
     return jsonify([{
         "risk_score": h.risk_score,
         "status": h.status,
         "timestamp": h.timestamp.strftime("%Y-%m-%d %H:%M") if h.timestamp else "N/A",
         "features_json": h.features_json  
     } for h in history])
+    
+# --- CHANGE 2: Unified Update Profile Route (supports name and email) ---
+@app.route('/api/profile', methods=['PUT'])
+@jwt_required()
+def update_profile():
+    data = request.json
+    user_id = get_jwt_identity()
+    user = User.query.get(int(user_id))
+    
+    if not user:
+        return jsonify({"error": "User not found"}), 404
+
+    if 'name' in data: # Matches frontend 'name' field
+        user.username = data['name']
+    if 'email' in data:
+        user.email = data['email']
+        
+    db.session.commit()
+    return jsonify({"message": "Profile updated successfully", "username": user.username}), 200
+
+@app.route('/change-password', methods=['POST'])
+@jwt_required()
+def change_password():
+    data = request.json
+    user_id = get_jwt_identity()
+    user = User.query.get(int(user_id))
+    
+    if bcrypt.check_password_hash(user.password, data['current_password']):
+        user.password = bcrypt.generate_password_hash(data['new_password']).decode('utf-8')
+        db.session.commit()
+        return jsonify({"msg": "Password updated"}), 200
+    return jsonify({"msg": "Current password incorrect"}), 400
+
+
 # --- THE CHATBOT ---
 
 @app.route('/api/chatbot', methods=['POST'])
@@ -151,25 +168,23 @@ def chatbot():
     user_msg = request.json.get('message', '')
     user_id = get_jwt_identity()
 
-    # Get latest history and extract the 13 factors
     last = HealthHistory.query.filter_by(user_id=int(user_id)).order_by(HealthHistory.timestamp.desc()).first()
     
-    if last and last.features_json:
-        try:
-            f = json.loads(last.features_json)
-            # Assuming standard indices (e.g., 3=systolic, 4=diastolic, 8=glucose)
-            context = (
-                f"User's Risk: {last.risk_score}% ({last.status}). "
-                f"Data: BP={f[3]}/{f[4]}, Chol={f[7]}, Glucose={f[8]}, Smoke={f[9]}, Alcohol={f[10]}."
-            )
-        except:
-            context = f"User Risk: {last.risk_score}%. Factors unavailable."
-    else:
-        context = "No history available."
+    # CHANGE 3: Professional Guardrail - Stop if no history exists
+    if not last or not last.features_json:
+        return jsonify({"response": "I cannot provide a clinical analysis yet. Please complete a cardiovascular assessment first so I can review your biometrics."})
+
+    try:
+        f = json.loads(last.features_json)
+        context = (
+            f"User's Risk: {last.risk_score}% ({last.status}). "
+            f"Data: BP={f[3]}/{f[4]}, Chol={f[7]}, Glucose={f[8]}, Smoke={f[9]}, Alcohol={f[10]}."
+        )
+    except:
+        context = f"User Risk: {last.risk_score}%. Factors unavailable."
 
     load_dotenv()
     hf_token = os.getenv("HUGGINGFACE_TOKEN")
-
     if not hf_token:
         return jsonify({"response": "API Key is missing."})
 

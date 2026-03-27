@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { LogOut } from 'lucide-react';
 import Hero from './components/Hero';
 import About from './components/About';
 import AssessmentForm from './components/AssessmentForm';
@@ -9,13 +10,62 @@ import Chatbot from './components/Chatbot';
 import HealthTips from './components/HealthTips';
 import LoginModal from './components/LoginModal'; // NEW IMPORT
 import './index.css';
+import Profile from './components/Profile.jsx';
+
+const LogoutConfirmModal = ({ isOpen, onClose, onConfirm }) => {
+  if (!isOpen) return null;
+  return (
+    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm animate-in fade-in duration-300">
+      <div className="bg-white rounded-[2rem] p-8 max-w-sm w-full shadow-2xl scale-in-center">
+        <div className="text-center space-y-4">
+          <div className="bg-red-50 w-16 h-16 rounded-2xl flex items-center justify-center mx-auto mb-6">
+            <LogOut className="text-red-500" size={32} />
+          </div>
+          <h3 className="text-2xl font-black text-slate-900">Wait a second!</h3>
+          <p className="text-slate-500 font-medium">Are you sure you want to end your session? We'll miss you!</p>
+          <div className="flex flex-col gap-3 pt-4">
+            <button 
+              onClick={onConfirm}
+              className="w-full bg-red-500 text-white py-4 rounded-xl font-bold hover:bg-red-600 transition-all active:scale-95 shadow-lg shadow-red-100"
+            >
+              Yes, Log Me Out
+            </button>
+            <button 
+              type="button" 
+              onClick={(e) => {
+                e.stopPropagation(); // Prevents the click from "bubbling up"
+                onClose();
+              }}
+              className="w-full bg-slate-100 text-slate-600 py-4 rounded-xl font-bold hover:bg-slate-200 transition-all"
+            >
+              Nah, Stay Logged IN
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
 
 function App() {
   const [view, setView] = useState('home'); 
   const [riskData, setRiskData] = useState(null);
   const [token, setToken] = useState(localStorage.getItem('userToken') || null);
   const [lastInputs, setLastInputs] = useState(null);
-  const [isModalOpen, setIsModalOpen] = useState(false); // NEW STATE for Modal
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isLogoutModalOpen, setIsLogoutModalOpen] = useState(false); // NEW STATE for Modal
+  const triggerLogout = () => {
+    setIsLogoutModalOpen(true);
+  };
+
+  // This actually does the work once they click "Yes" in the cute modal
+  const confirmLogout = () => {
+    localStorage.removeItem('userToken');
+    localStorage.removeItem('userName');
+    setToken(null);
+    setView('home');
+    setIsLogoutModalOpen(false);
+  };
 
   useEffect(() => {
     const checkToken = async () => {
@@ -38,11 +88,23 @@ function App() {
     checkToken();
   }, []);
 
+  // const handleLogout = () => {
+  //   localStorage.removeItem('userToken');
+  //   setToken(null);
+  //   setView('home');
+  // };
+
   const handleLogout = () => {
-    localStorage.removeItem('userToken');
-    setToken(null);
-    setView('home');
+    // Add the confirmation window here
+    setIsLogoutModalOpen(true);
+    if (confirmLogout) {
+      localStorage.removeItem('userToken');
+      setToken(null);
+      setView('home');
+    }
   };
+
+  
 
   const handleStart = () => {
     if (!token) setView('login');
@@ -111,7 +173,13 @@ function App() {
 
   return (
     <div className="min-h-screen bg-white relative">
-      {/* PRETTY LOGIN MODAL */}
+
+      <LogoutConfirmModal 
+        isOpen={isLogoutModalOpen} 
+        onClose={() => setIsLogoutModalOpen(false)} 
+        onConfirm={confirmLogout} 
+      />
+      {/* LOGIN MODAL */}
       <LoginModal 
         isOpen={isModalOpen} 
         onClose={() => setIsModalOpen(false)} 
@@ -145,7 +213,7 @@ function App() {
               </button>
               <div className="h-4 w-px bg-slate-200"></div>
               <button 
-                onClick={handleLogout} 
+                onClick={triggerLogout} 
                 className="text-sm font-bold text-slate-500 hover:text-red-600 transition-colors"
               >
                 Logout
@@ -192,6 +260,17 @@ function App() {
             <Dashboard 
               token={token} 
               onNewTest={() => setView('form')} 
+              onOpenProfile={() => setView('profile')}
+              onLogout={() => setIsLogoutModalOpen(true)}
+            />
+          </div>
+        )}
+
+        {view === 'profile' && token && (
+          <div className="bg-slate-50 min-h-screen py-12 px-6">
+            <Profile 
+              token={token} 
+              onBack={() => setView('dashboard')} 
             />
           </div>
         )}
