@@ -35,8 +35,12 @@ const Chatbot = ({ token }) => {
       });
 
       const data = await response.json();
-      // Note: Backend uses data.response
-      setMessages(prev => [...prev, { role: 'bot', text: data.response }]);
+      // Handle standardized response format
+      if (data.success) {
+        setMessages(prev => [...prev, { role: 'bot', text: data.data.response }]);
+      } else {
+        setMessages(prev => [...prev, { role: 'bot', text: data.error || "Sorry, I'm having trouble connecting to my brain right now." }]);
+      } // <--- FIXED: Added missing closing bracket here
     } catch (error) {
       setMessages(prev => [...prev, { role: 'bot', text: "Sorry, I'm having trouble connecting to my brain right now." }]);
     } finally {
@@ -82,7 +86,7 @@ const Chatbot = ({ token }) => {
             )}
           </div>
 
-          {/* NEW: Safety Disclaimer Section */}
+          {/* Safety Disclaimer Section */}
           <div className="px-4 py-2 bg-slate-100 border-t border-slate-200 flex items-center gap-2">
             <ShieldAlert size={14} className="text-slate-500" />
             <span className="text-[10px] text-slate-500 italic leading-tight">

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { User, Lock, ChevronLeft, Loader2, CheckCircle2, AlertCircle } from 'lucide-react';
 
 const Profile = ({ token, onBack }) => {
@@ -6,6 +6,38 @@ const Profile = ({ token, onBack }) => {
   const [passwords, setPasswords] = useState({ current: '', new: '', confirm: '' });
   const [loading, setLoading] = useState(false);
   const [status, setStatus] = useState({ type: '', msg: '' });
+  const [remainingDays, setRemainingDays] = useState(0);
+
+  const getRemainingDays = (lastChange) => {
+    if (!lastChange) return 0;
+    const last = new Date(lastChange).getTime();
+    const diffMs = Date.now() - last;
+    const msPer15Days = 15 * 24 * 60 * 60 * 1000;
+    if (diffMs >= msPer15Days) return 0;
+    return Math.ceil((msPer15Days - diffMs) / (24 * 60 * 60 * 1000));
+  };
+
+  const loadProfile = async () => {
+    try {
+      const res = await fetch('http://127.0.0.1:5001/api/profile', {
+        method: 'GET',
+        headers: { 
+          'Content-Type': 'application/json', 
+          'Authorization': `Bearer ${token}` 
+        }
+      });
+      const data = await res.json();
+      if (data.success && data.data.last_password_change) {
+        setRemainingDays(getRemainingDays(data.data.last_password_change));
+      }
+    } catch (err) {
+      // ignore load failure here; password changes will still be validated by backend
+    }
+  };
+
+  useEffect(() => {
+    loadProfile();
+  }, [token]);
 
   // Helper to show status and auto-hide
   const showStatus = (type, msg) => {
@@ -17,20 +49,20 @@ const Profile = ({ token, onBack }) => {
     e.preventDefault();
     setLoading(true);
     try {
-      const res = await fetch('http://127.0.0.1:5001/update-profile', {
-        method: 'POST',
+      const res = await fetch('http://127.0.0.1:5001/api/profile', {
+        method: 'PUT',
         headers: { 
           'Content-Type': 'application/json', 
           'Authorization': `Bearer ${token}` 
         },
-        body: JSON.stringify({ username }) // Matches 'username' in app.py
+        body: JSON.stringify({ name: username }) // Matches 'name' field in app.py
       });
       const data = await res.json();
-      if (res.ok) {
+      if (data.success) {
         localStorage.setItem('userName', username);
         showStatus('success', 'Profile name updated!');
       } else {
-        showStatus('error', data.msg || 'Update failed');
+        showStatus('error', data.error || 'Update failed');
       }
     } catch (err) {
       showStatus('error', 'Connection to server failed');
@@ -40,6 +72,10 @@ const Profile = ({ token, onBack }) => {
 
   const handleUpdatePassword = async (e) => {
     e.preventDefault();
+    if (remainingDays > 0) {
+      showStatus('error', `Please wait ${remainingDays} more day${remainingDays > 1 ? 's' : ''} before changing your password again.`);
+      return;
+    }
     if (passwords.new !== passwords.confirm) {
       showStatus('error', 'New passwords do not match');
       return;
@@ -58,11 +94,12 @@ const Profile = ({ token, onBack }) => {
         })
       });
       const data = await res.json();
-      if (res.ok) {
+      if (data.success) {
         showStatus('success', 'Password changed successfully!');
         setPasswords({ current: '', new: '', confirm: '' });
+        setRemainingDays(15);
       } else {
-        showStatus('error', data.msg || 'Incorrect current password');
+        showStatus('error', data.error || 'Incorrect current password');
       }
     } catch (err) {
       showStatus('error', 'Server connection error');
@@ -112,6 +149,10 @@ const Profile = ({ token, onBack }) => {
         <div className="bg-white p-8 rounded-[2.5rem] border border-slate-100 shadow-sm transition-all hover:shadow-md">
           <div className="p-3 bg-orange-50 w-fit rounded-2xl mb-4 text-orange-600"><Lock size={24}/></div>
           <h3 className="font-bold text-slate-800 mb-4">Security</h3>
+          <p className="text-sm text-slate-500 mb-4">
+            Password changes are limited to once every 15 days.
+            {remainingDays > 0 && ` Next update available in ${remainingDays} day${remainingDays > 1 ? 's' : ''}.`}
+          </p>
           <input 
             type="password" 
             placeholder="Current Password" 
@@ -135,8 +176,8 @@ const Profile = ({ token, onBack }) => {
           />
           <button 
             onClick={handleUpdatePassword} 
-            disabled={loading}
-            className="w-full bg-blue-600 text-white py-4 rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-blue-700 transition-all flex justify-center items-center gap-2"
+            disabled={loading || remainingDays > 0}
+            className={`w-full py-4 rounded-2xl font-black text-xs uppercase tracking-widest transition-all flex justify-center items-center gap-2 ${remainingDays > 0 ? 'bg-slate-300 text-slate-500 cursor-not-allowed' : 'bg-blue-600 text-white hover:bg-blue-700'}`}
           >
             {loading ? <Loader2 className="animate-spin" size={18}/> : 'Update Password'}
           </button>

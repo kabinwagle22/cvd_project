@@ -15,6 +15,18 @@ const ProfileModal = ({ isOpen, onClose, token, currentName }) => {
   const [name, setName] = useState(currentName);
   const [isSaving, setIsSaving] = useState(false);
   const [message, setMessage] = useState("");
+  const [passwords, setPasswords] = useState({ current: '', new: '', confirm: '' });
+  const [passwordMessage, setPasswordMessage] = useState("");
+  const [isPasswordSaving, setIsPasswordSaving] = useState(false);
+
+  useEffect(() => {
+    if (isOpen) {
+      setName(currentName);
+      setPasswords({ current: '', new: '', confirm: '' });
+      setPasswordMessage("");
+      setMessage("");
+    }
+  }, [isOpen, currentName]);
 
   if (!isOpen) return null;
 
@@ -37,11 +49,51 @@ const ProfileModal = ({ isOpen, onClose, token, currentName }) => {
             onClose();
             window.location.reload();
         }, 1000);
+      } else {
+        const data = await response.json();
+        setMessage(data.error || "Update failed.");
       }
     } catch (err) {
       setMessage("Connection error.");
     } finally {
       setIsSaving(false);
+    }
+  };
+
+  const handlePasswordSave = async () => {
+    if (!passwords.current || !passwords.new || !passwords.confirm) {
+      setPasswordMessage("Please fill in all password fields.");
+      return;
+    }
+    if (passwords.new !== passwords.confirm) {
+      setPasswordMessage("New passwords do not match.");
+      return;
+    }
+
+    setIsPasswordSaving(true);
+    try {
+      const response = await fetch('http://127.0.0.1:5001/change-password', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          current_password: passwords.current,
+          new_password: passwords.new
+        })
+      });
+      const data = await response.json();
+      if (data.success) {
+        setPasswordMessage("Password changed successfully!");
+        setPasswords({ current: '', new: '', confirm: '' });
+      } else {
+        setPasswordMessage(data.error || "Password update failed.");
+      }
+    } catch (err) {
+      setPasswordMessage("Server connection error.");
+    } finally {
+      setIsPasswordSaving(false);
     }
   };
 
@@ -69,6 +121,42 @@ const ProfileModal = ({ isOpen, onClose, token, currentName }) => {
           >
             {isSaving ? <Loader2 className="animate-spin" size={18}/> : 'Save Changes'}
           </button>
+
+          <div className="pt-8 border-t border-slate-100">
+            <h4 className="text-lg font-black text-slate-900">Change Password</h4>
+            <p className="text-sm text-slate-500 mt-2">Passwords can only be updated once every 15 days.</p>
+            <div className="space-y-4 mt-5">
+              <input
+                type="password"
+                placeholder="Current Password"
+                value={passwords.current}
+                onChange={(e) => setPasswords({ ...passwords, current: e.target.value })}
+                className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl focus:ring-2 focus:ring-blue-500 outline-none font-bold text-slate-700"
+              />
+              <input
+                type="password"
+                placeholder="New Password"
+                value={passwords.new}
+                onChange={(e) => setPasswords({ ...passwords, new: e.target.value })}
+                className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl focus:ring-2 focus:ring-blue-500 outline-none font-bold text-slate-700"
+              />
+              <input
+                type="password"
+                placeholder="Confirm New Password"
+                value={passwords.confirm}
+                onChange={(e) => setPasswords({ ...passwords, confirm: e.target.value })}
+                className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl focus:ring-2 focus:ring-blue-500 outline-none font-bold text-slate-700"
+              />
+            </div>
+            {passwordMessage && <p className="text-xs font-bold text-red-600 mt-3">{passwordMessage}</p>}
+            <button
+              onClick={handlePasswordSave}
+              disabled={isPasswordSaving}
+              className="w-full mt-4 bg-blue-600 text-white py-4 rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-blue-700 transition-all flex items-center justify-center gap-3"
+            >
+              {isPasswordSaving ? <Loader2 className="animate-spin" size={18}/> : 'Update Password'}
+            </button>
+          </div>
         </div>
       </div>
     </div>
@@ -94,7 +182,11 @@ const AnalysisModal = ({ isOpen, onClose, token, hasHistory }) => {
       })
       .then(res => res.json())
       .then(data => {
-        setAnalysis(data.response || "No analysis available.");
+        if (data.success) {
+          setAnalysis(data.data.response || "No analysis available.");
+        } else {
+          setAnalysis(data.error || "Unable to reach the AI Assistant.");
+        }
         setIsTyping(false);
       })
       .catch(err => {
@@ -224,20 +316,35 @@ const Dashboard = ({ token, onNewTest, onLogout }) => {
     fetch('http://127.0.0.1:5001/history', {
       headers: { 'Authorization': `Bearer ${token}` }
     })
-    .then(res => res.json())
+    .then(res => {
+      if (res.status === 401) {
+        localStorage.removeItem('userToken');
+        localStorage.removeItem('userName');
+        window.location.reload(); // This triggers a redirect via your App.js logic
+        return;
+      }
+      return res.json();
+    })
     .then(data => {
-      setHistory(data);
+      if (data.success) {
+      setHistory(data.data || []); 
+      } else {
+        setHistory([]);
+      }
+      //setHistory(data);
       setLoading(false);
     })
     .catch(err => {
       console.error("Error:", err);
+      setHistory([]);
       setLoading(false);
     });
   }, [token]);
 
-  const chartData = [...history].reverse();
-  const lastAssessment = history.length > 0 ? history[0] : null;
-  const variance = history.length > 1 ? (history[0].risk_score - history[1].risk_score).toFixed(1) : 0;
+  // This "|| []" ensures that if history is null or not an array, it defaults to an empty list
+  const chartData = Array.isArray(history) ? [...history].reverse() : [];
+  const lastAssessment = Array.isArray(history) && history.length > 0 ? history[0] : null;
+  const variance = Array.isArray(history) && history.length > 1 ? (history[0].risk_score - history[1].risk_score).toFixed(1) : 0;
 
   let vitals = { bp: "--/--", chol: "--", hr: "--", age: "--" };
   if (lastAssessment && lastAssessment.features_json) {

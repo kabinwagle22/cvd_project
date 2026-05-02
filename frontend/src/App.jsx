@@ -52,6 +52,7 @@ function App() {
   const [riskData, setRiskData] = useState(null);
   const [token, setToken] = useState(localStorage.getItem('userToken') || null);
   const [lastInputs, setLastInputs] = useState(null);
+  const [isFullData, setIsFullData] = useState(false); // NEW: Track data completeness
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isLogoutModalOpen, setIsLogoutModalOpen] = useState(false); // NEW STATE for Modal
   const triggerLogout = () => {
@@ -70,7 +71,10 @@ function App() {
   useEffect(() => {
     const checkToken = async () => {
       const savedToken = localStorage.getItem('userToken');
-      if (!savedToken) return;
+      if (!savedToken) {
+        setView('home'); // Redirect to home if no token
+        return;
+      }
   
       try {
         const resp = await fetch('http://127.0.0.1:5001/history', {
@@ -88,11 +92,6 @@ function App() {
     checkToken();
   }, []);
 
-  // const handleLogout = () => {
-  //   localStorage.removeItem('userToken');
-  //   setToken(null);
-  //   setView('home');
-  // };
 
   const handleLogout = () => {
     // Add the confirmation window here
@@ -139,9 +138,10 @@ function App() {
     }
   };
 
-  const handleCalculate = async (featureArray) => {
+  const handleCalculate = async (featureArray, fullData = false) => {
     // We store the array for the results page to use later
-    setLastInputs(featureArray); 
+    setLastInputs(featureArray);
+    setIsFullData(fullData); // NEW: Store data completeness flag
     
     try {
       const response = await fetch('http://127.0.0.1:5001/predict', {
@@ -162,8 +162,13 @@ function App() {
         alert("Session expired. Please login again.");
         return;
       }
+      
+      if (!data.success) {
+        alert(data.error || "Prediction failed");
+        return;
+      }
 
-      setRiskData(data); 
+      setRiskData(data.data); 
       setView('results');
     } catch (error) {
       console.error("Backend Error:", error);
@@ -287,7 +292,8 @@ function App() {
               riskScore={riskData.risk_score} 
               status={riskData.status}
               recommendation={riskData.recommendation}
-              userInputs={lastInputs} 
+              userInputs={lastInputs}
+              isFullData={isFullData}
               onReset={() => setView('dashboard')} 
             />
           </div>

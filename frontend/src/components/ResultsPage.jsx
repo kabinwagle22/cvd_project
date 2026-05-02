@@ -1,9 +1,9 @@
 import React from 'react';
 import { generatePDF } from '../utils/reportGenerator';
-import { AlertTriangle, CheckCircle, RefreshCw, Download, Info } from 'lucide-react';
+import { AlertTriangle, CheckCircle, RefreshCw, Download, Info, AlertCircle } from 'lucide-react';
 
-// Added userInputs to the destructured props
-const ResultsPage = ({ riskScore, status, recommendation, userInputs, alerts = [], onReset }) => {
+// Added userInputs and isFullData to the destructured props
+const ResultsPage = ({ riskScore, status, recommendation, userInputs, alerts = [], isFullData = false, onReset }) => {
   
   const displayScore = riskScore || 0;
   const displayStatus = status || "Analysis Complete";
@@ -76,6 +76,25 @@ const ResultsPage = ({ riskScore, status, recommendation, userInputs, alerts = [
           </p>
         </div>
       </div>
+
+      {/* Smart Data Confidence Alert */}
+      {isFullData ? (
+        <div className="mb-6 bg-green-50 border border-green-200 p-4 rounded-2xl flex items-start gap-4">
+          <CheckCircle className="text-green-600 shrink-0 mt-1" size={24} />
+          <div>
+            <h3 className="font-bold text-green-600">✅ High Confidence</h3>
+            <p className="text-green-700 text-sm">Full clinical profile analyzed with all 13 biometric parameters.</p>
+          </div>
+        </div>
+      ) : (
+        <div className="mb-6 bg-amber-50 border border-amber-200 p-4 rounded-2xl flex items-start gap-4">
+          <AlertCircle className="text-amber-600 shrink-0 mt-1" size={24} />
+          <div>
+            <h3 className="font-bold text-amber-600">⚠️ Estimated Result</h3>
+            <p className="text-amber-700 text-sm">Clinical data skipped; using dataset averages for missing values.</p>
+          </div>
+        </div>
+      )}
 
       {/* Critical Alerts from Flask (if any) */}
       {alerts && alerts.length > 0 && (

@@ -89,16 +89,16 @@ const Auth = ({ onLoginSuccess }) => {
       });
       const data = await response.json();
 
-      if (response.ok) {
+      if (response.ok && data.success) {
         if (isLogin) {
-          localStorage.setItem('userToken', data.token);
-          localStorage.setItem('userName', data.username);
-          onLoginSuccess(data.token);
+          localStorage.setItem('userToken', data.data.token);
+          localStorage.setItem('userName', data.data.username);
+          onLoginSuccess(data.data.token);
         } else {
           setIsRegistered(true); 
         }
       } else {
-        setServerError(data.message || "Authentication failed");
+        setServerError(data.error || "Authentication failed");
       }
     } catch (err) {
       setServerError("Server connection failed.");

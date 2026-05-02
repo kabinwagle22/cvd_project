@@ -4,3 +4,14 @@ matplotlib
 seaborn
 scikit-learn
 jupyter
+Flask
+Flask-CORS
+Flask-SQLAlchemy
+Flask-Bcrypt
+Flask-JWT-Extended
+Flask-Limiter
+requests
+joblib
+python-dotenv
+jsPDF
+jspdf-autotable
